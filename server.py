@@ -352,9 +352,12 @@ def create_mcp() -> FastMCP:
     base_url = os.getenv("X_API_BASE_URL", "https://api.x.com")
     timeout = float(os.getenv("X_API_TIMEOUT", "30"))
 
-    oauth1_client = build_oauth1_client()
+    consumer_key = os.getenv("X_OAUTH_CONSUMER_KEY", "").strip()
+    consumer_secret = os.getenv("X_OAUTH_CONSUMER_SECRET", "").strip()
+    use_oauth1 = bool(consumer_key and consumer_secret)
+    oauth1_client = build_oauth1_client() if use_oauth1 else None
     print_oauth_header = is_truthy(os.getenv("X_OAUTH_PRINT_AUTH_HEADER", "0"))
-    if print_oauth_header:
+    if print_oauth_header and oauth1_client:
         print_oauth1_header_probe(oauth1_client, base_url)
 
     spec = load_openapi_spec()
@@ -396,6 +399,11 @@ def create_mcp() -> FastMCP:
 
     async def sign_oauth1_request(request: httpx.Request) -> None:
         request.headers["X-B3-Flags"] = b3_flags
+        if oauth1_client is None:
+            # Bearer-only mode: inject bearer token directly
+            bearer_token = os.getenv("X_BEARER_TOKEN", "").strip()
+            request.headers["Authorization"] = f"Bearer {bearer_token}"
+            return
         headers = dict(request.headers)
         content_type = headers.get("Content-Type", "")
         body: str | None = None
